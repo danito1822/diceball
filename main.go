@@ -60,7 +60,7 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	</head>
 	<body class="bg-gray-100">
 		<div class="container mx-auto px-4 py-8">
-			<h1 class="text-3xl font-bold mb-8 text-gray-800">Server Dashboard</h1>
+			<h1 class="text-3xl font-bold mb-8 text-gray-800">Servidor Diceball</h1>
 			
 			<div id="stats" hx-get="/stats" hx-trigger="every 1s" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
 				<!-- Stats will be updated here -->
