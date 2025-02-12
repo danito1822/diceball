@@ -62,49 +62,80 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 		<div class="container mx-auto px-4 py-8">
 			<h1 class="text-3xl font-bold mb-8 text-gray-800">Server Dashboard</h1>
 			
-			<div hx-get="/stats" hx-trigger="every 1s" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+			<div id="stats" hx-get="/stats" hx-trigger="every 1s" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
 				<!-- Stats will be updated here -->
-			</div>
-			
-			<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-				<div class="bg-white rounded-lg shadow p-6">
-					<h2 class="text-xl font-semibold mb-4 text-gray-700">Jugadores en Cola ({{.WaitingPlayers}})</h2>
-					<div class="space-y-2">
-						{{range .WaitingPlayersList}}
-						<div class="flex items-center justify-between p-3 bg-gray-50 rounded">
-							<span class="font-mono text-sm">{{.ID}}</span>
-							<span class="text-xs text-gray-500">{{.CreatedAt.Format "15:04:05"}}</span>
-						</div>
-						{{end}}
-					</div>
-				</div>
-				
-				<div class="bg-white rounded-lg shadow p-6">
-					<h2 class="text-xl font-semibold mb-4 text-gray-700">Salas Activas ({{.ActiveRooms}})</h2>
-					<div class="space-y-2">
-						{{range $room, $players := .ActiveRoomsList}}
-						<div class="p-3 bg-gray-50 rounded">
-							<div class="font-medium text-gray-600 mb-2">Room: {{$room}}</div>
-							<div class="flex justify-between text-sm">
-								<span>{{index $players 0}}</span>
-								<span class="text-gray-500">vs</span>
-								<span>{{index $players 1}}</span>
-							</div>
-						</div>
-						{{end}}
-					</div>
-				</div>
 			</div>
 		</div>
 	</body>
 	</html>
 	`))
 
-	// Bloqueamos los mutex en orden consistente
+	w.Header().Set("Content-Type", "text/html")
+	tmpl.Execute(w, nil)
+}
+
+func statsHandler(w http.ResponseWriter, r *http.Request) {
+	statsTemplate := template.Must(template.New("stats").Parse(`
+	<div class="bg-white rounded-lg shadow p-4">
+		<div class="grid grid-cols-4 gap-4 mb-4">
+			<div class="text-center p-2 bg-blue-50 rounded">
+				<p class="text-sm text-blue-600">Total Players</p>
+				<p class="text-xl font-bold">{{.TotalPlayers}}</p>
+			</div>
+			<div class="text-center p-2 bg-yellow-50 rounded">
+				<p class="text-sm text-yellow-600">Waiting</p>
+				<p class="text-xl font-bold">{{.WaitingPlayers}}</p>
+			</div>
+			<div class="text-center p-2 bg-green-50 rounded">
+				<p class="text-sm text-green-600">Matched</p>
+				<p class="text-xl font-bold">{{.MatchedPlayers}}</p>
+			</div>
+			<div class="text-center p-2 bg-purple-50 rounded">
+				<p class="text-sm text-purple-600">Active Rooms</p>
+				<p class="text-xl font-bold">{{.ActiveRooms}}</p>
+			</div>
+		</div>
+
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+			<div class="bg-white rounded-lg shadow p-6">
+				<h2 class="text-xl font-semibold mb-4 text-gray-700">Waiting Players ({{.WaitingPlayers}})</h2>
+				<div class="space-y-2">
+					{{range .WaitingPlayersList}}
+					<div class="flex items-center justify-between p-3 bg-gray-50 rounded">
+						<span class="font-mono text-sm">{{.ID}}</span>
+						<span class="text-xs text-gray-500">{{.CreatedAt.Format "15:04:05"}}</span>
+					</div>
+					{{else}}
+					<div class="p-3 text-center text-gray-500">No waiting players</div>
+					{{end}}
+				</div>
+			</div>
+			
+			<div class="bg-white rounded-lg shadow p-6">
+				<h2 class="text-xl font-semibold mb-4 text-gray-700">Active Rooms ({{.ActiveRooms}})</h2>
+				<div class="space-y-2">
+					{{range $room, $players := .ActiveRoomsList}}
+					<div class="p-3 bg-gray-50 rounded">
+						<div class="font-medium text-gray-600 mb-2">Room: {{$room}}</div>
+						<div class="flex justify-between text-sm">
+							<span>{{index $players 0}}</span>
+							<span class="text-gray-500">vs</span>
+							<span>{{index $players 1}}</span>
+						</div>
+					</div>
+					{{else}}
+					<div class="p-3 text-center text-gray-500">No active rooms</div>
+					{{end}}
+				</div>
+			</div>
+		</div>
+	</div>
+	`))
+
+	// Obtener datos de forma segura
 	poolMutex.Lock()
 	roomMutex.Lock()
 
-	// Calculamos estadísticas directamente
 	stats := ServerStats{
 		TotalPlayers:   len(players),
 		WaitingPlayers: len(pool),
@@ -119,13 +150,11 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Hacer copia de las rooms para evitar bloqueos
 	roomsCopy := make(map[string][]string)
 	for k, v := range rooms {
 		roomsCopy[k] = v
 	}
 
-	// Desbloqueamos antes de renderizar
 	roomMutex.Unlock()
 	poolMutex.Unlock()
 
@@ -140,56 +169,9 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	if err := tmpl.Execute(w, data); err != nil {
-		http.Error(w, "Error rendering template: "+err.Error(), http.StatusInternalServerError)
-	}
+	statsTemplate.Execute(w, data)
 }
 
-func statsHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	json.NewEncoder(w).Encode(getStats())
-}
-
-func getStats() ServerStats {
-	poolMutex.Lock()
-	roomMutex.Lock()
-	defer poolMutex.Unlock()
-	defer roomMutex.Unlock()
-
-	return ServerStats{
-		TotalPlayers:   len(players),
-		WaitingPlayers: len(pool),
-		MatchedPlayers: len(players) - len(pool),
-		ActiveRooms:    len(rooms),
-	}
-}
-
-// Resto del código sin cambios (handleJoin, handleStatus, matchPlayers)...
-
-func cleanupOldRooms() {
-	for {
-		time.Sleep(5 * time.Minute)
-
-		// Orden de bloqueo consistente: primero poolMutex luego roomMutex
-		poolMutex.Lock()
-		roomMutex.Lock()
-
-		for room, roomPlayers := range rooms {
-			_, p1Exists := players[roomPlayers[0]]
-			_, p2Exists := players[roomPlayers[1]]
-
-			if !p1Exists && !p2Exists {
-				delete(rooms, room)
-			}
-		}
-
-		roomMutex.Unlock()
-		poolMutex.Unlock()
-	}
-}
-
-// [Las funciones handleJoin, handleStatus, matchPlayers permanecen iguales]
 func handleJoin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -211,9 +193,10 @@ func handleJoin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	poolMutex.Lock()
+	defer poolMutex.Unlock()
+
 	players[playerID] = player
 	pool = append(pool, player)
-	poolMutex.Unlock()
 
 	response := map[string]string{
 		"status":   "waiting",
@@ -250,7 +233,6 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		}
 		json.NewEncoder(w).Encode(response)
 
-		// Limpiar jugador después del match
 		poolMutex.Lock()
 		delete(players, playerID)
 		poolMutex.Unlock()
@@ -262,7 +244,6 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Modificación en matchPlayers para registrar las salas
 func matchPlayers() {
 	for {
 		poolMutex.Lock()
@@ -288,5 +269,25 @@ func matchPlayers() {
 		}
 		poolMutex.Unlock()
 		time.Sleep(1 * time.Second)
+	}
+}
+
+func cleanupOldRooms() {
+	for {
+		time.Sleep(5 * time.Minute)
+		poolMutex.Lock()
+		roomMutex.Lock()
+
+		for room, roomPlayers := range rooms {
+			_, p1Exists := players[roomPlayers[0]]
+			_, p2Exists := players[roomPlayers[1]]
+
+			if !p1Exists && !p2Exists {
+				delete(rooms, room)
+			}
+		}
+
+		roomMutex.Unlock()
+		poolMutex.Unlock()
 	}
 }
