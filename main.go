@@ -79,26 +79,26 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 	<div class="bg-white rounded-lg shadow p-4">
 		<div class="grid grid-cols-4 gap-4 mb-4">
 			<div class="text-center p-2 bg-blue-50 rounded">
-				<p class="text-sm text-blue-600">Total Players</p>
+				<p class="text-sm text-blue-600">Total Jugadpres</p>
 				<p class="text-xl font-bold">{{.TotalPlayers}}</p>
 			</div>
 			<div class="text-center p-2 bg-yellow-50 rounded">
-				<p class="text-sm text-yellow-600">Waiting</p>
+				<p class="text-sm text-yellow-600">En Cola</p>
 				<p class="text-xl font-bold">{{.WaitingPlayers}}</p>
 			</div>
 			<div class="text-center p-2 bg-green-50 rounded">
-				<p class="text-sm text-green-600">Matched</p>
+				<p class="text-sm text-green-600">Jugando</p>
 				<p class="text-xl font-bold">{{.MatchedPlayers}}</p>
 			</div>
 			<div class="text-center p-2 bg-purple-50 rounded">
-				<p class="text-sm text-purple-600">Active Rooms</p>
+				<p class="text-sm text-purple-600">Salas Creadas</p>
 				<p class="text-xl font-bold">{{.ActiveRooms}}</p>
 			</div>
 		</div>
 
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 			<div class="bg-white rounded-lg shadow p-6">
-				<h2 class="text-xl font-semibold mb-4 text-gray-700">Waiting Players ({{.WaitingPlayers}})</h2>
+				<h2 class="text-xl font-semibold mb-4 text-gray-700">Jugadores en Cola ({{.WaitingPlayers}})</h2>
 				<div class="space-y-2">
 					{{range .WaitingPlayersList}}
 					<div class="flex items-center justify-between p-3 bg-gray-50 rounded">
@@ -106,13 +106,13 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 						<span class="text-xs text-gray-500">{{.CreatedAt.Format "15:04:05"}}</span>
 					</div>
 					{{else}}
-					<div class="p-3 text-center text-gray-500">No waiting players</div>
+					<div class="p-3 text-center text-gray-500">No hay jugadores</div>
 					{{end}}
 				</div>
 			</div>
 			
 			<div class="bg-white rounded-lg shadow p-6">
-				<h2 class="text-xl font-semibold mb-4 text-gray-700">Active Rooms ({{.ActiveRooms}})</h2>
+				<h2 class="text-xl font-semibold mb-4 text-gray-700">Salas Activas ({{.ActiveRooms}})</h2>
 				<div class="space-y-2">
 					{{range $room, $players := .ActiveRoomsList}}
 					<div class="p-3 bg-gray-50 rounded">
@@ -124,7 +124,7 @@ func statsHandler(w http.ResponseWriter, r *http.Request) {
 						</div>
 					</div>
 					{{else}}
-					<div class="p-3 text-center text-gray-500">No active rooms</div>
+					<div class="p-3 text-center text-gray-500">No hay salas</div>
 					{{end}}
 				</div>
 			</div>
