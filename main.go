@@ -18,6 +18,7 @@ type Player struct {
 	OpponentID chan string
 	RoomID     string
 }
+
 type ServerStats struct {
 	TotalPlayers   int
 	WaitingPlayers int
@@ -46,7 +47,6 @@ func main() {
 	http.ListenAndServe(":8080", nil)
 }
 
-// Nuevo handler para el dashboard
 func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl := template.Must(template.New("dashboard").Parse(`
 	<!DOCTYPE html>
@@ -68,7 +68,7 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 			
 			<div class="grid grid-cols-1 md:grid-cols-2 gap-6">
 				<div class="bg-white rounded-lg shadow p-6">
-					<h2 class="text-xl font-semibold mb-4 text-gray-700">Waiting Players ({{.WaitingPlayers}})</h2>
+					<h2 class="text-xl font-semibold mb-4 text-gray-700">Jugadores en Cola ({{.WaitingPlayers}})</h2>
 					<div class="space-y-2">
 						{{range .WaitingPlayersList}}
 						<div class="flex items-center justify-between p-3 bg-gray-50 rounded">
@@ -80,7 +80,7 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 				</div>
 				
 				<div class="bg-white rounded-lg shadow p-6">
-					<h2 class="text-xl font-semibold mb-4 text-gray-700">Active Rooms ({{.ActiveRooms}})</h2>
+					<h2 class="text-xl font-semibold mb-4 text-gray-700">Salas Activas ({{.ActiveRooms}})</h2>
 					<div class="space-y-2">
 						{{range $room, $players := .ActiveRoomsList}}
 						<div class="p-3 bg-gray-50 rounded">
@@ -100,18 +100,34 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	</html>
 	`))
 
+	// Bloqueamos los mutex en orden consistente
 	poolMutex.Lock()
-	defer poolMutex.Unlock()
 	roomMutex.Lock()
-	defer roomMutex.Unlock()
 
-	stats := getStats()
+	// Calculamos estadísticas directamente
+	stats := ServerStats{
+		TotalPlayers:   len(players),
+		WaitingPlayers: len(pool),
+		MatchedPlayers: len(players) - len(pool),
+		ActiveRooms:    len(rooms),
+	}
+
 	waitingPlayers := make([]*Player, 0)
 	for _, p := range players {
 		if !p.Matched {
 			waitingPlayers = append(waitingPlayers, p)
 		}
 	}
+
+	// Hacer copia de las rooms para evitar bloqueos
+	roomsCopy := make(map[string][]string)
+	for k, v := range rooms {
+		roomsCopy[k] = v
+	}
+
+	// Desbloqueamos antes de renderizar
+	roomMutex.Unlock()
+	poolMutex.Unlock()
 
 	data := struct {
 		ServerStats
@@ -120,26 +136,25 @@ func dashboardHandler(w http.ResponseWriter, r *http.Request) {
 	}{
 		ServerStats:        stats,
 		WaitingPlayersList: waitingPlayers,
-		ActiveRoomsList:    rooms,
+		ActiveRoomsList:    roomsCopy,
 	}
 
 	w.Header().Set("Content-Type", "text/html")
-	tmpl.Execute(w, data)
+	if err := tmpl.Execute(w, data); err != nil {
+		http.Error(w, "Error rendering template: "+err.Error(), http.StatusInternalServerError)
+	}
 }
 
-// Nuevo handler para estadísticas en JSON
 func statsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
-
-	stats := getStats()
-	json.NewEncoder(w).Encode(stats)
+	json.NewEncoder(w).Encode(getStats())
 }
 
 func getStats() ServerStats {
 	poolMutex.Lock()
-	defer poolMutex.Unlock()
 	roomMutex.Lock()
+	defer poolMutex.Unlock()
 	defer roomMutex.Unlock()
 
 	return ServerStats{
@@ -150,6 +165,31 @@ func getStats() ServerStats {
 	}
 }
 
+// Resto del código sin cambios (handleJoin, handleStatus, matchPlayers)...
+
+func cleanupOldRooms() {
+	for {
+		time.Sleep(5 * time.Minute)
+
+		// Orden de bloqueo consistente: primero poolMutex luego roomMutex
+		poolMutex.Lock()
+		roomMutex.Lock()
+
+		for room, roomPlayers := range rooms {
+			_, p1Exists := players[roomPlayers[0]]
+			_, p2Exists := players[roomPlayers[1]]
+
+			if !p1Exists && !p2Exists {
+				delete(rooms, room)
+			}
+		}
+
+		roomMutex.Unlock()
+		poolMutex.Unlock()
+	}
+}
+
+// [Las funciones handleJoin, handleStatus, matchPlayers permanecen iguales]
 func handleJoin(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
@@ -248,27 +288,5 @@ func matchPlayers() {
 		}
 		poolMutex.Unlock()
 		time.Sleep(1 * time.Second)
-	}
-}
-
-// Limpieza de salas antiguas
-func cleanupOldRooms() {
-	for {
-		time.Sleep(5 * time.Minute)
-		roomMutex.Lock()
-		poolMutex.Lock()
-
-		for room, roomPlayers := range rooms {
-			// Verificar si ambos jugadores ya no están en el sistema
-			_, p1Exists := players[roomPlayers[0]]
-			_, p2Exists := players[roomPlayers[1]]
-
-			if !p1Exists && !p2Exists {
-				delete(rooms, room)
-			}
-		}
-
-		poolMutex.Unlock()
-		roomMutex.Unlock()
 	}
 }
