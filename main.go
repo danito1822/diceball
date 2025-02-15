@@ -39,7 +39,7 @@ func main() {
 	http.HandleFunc("/join", handleJoin)
 	http.HandleFunc("/status/", handleStatus)
 	http.HandleFunc("/stats", statsHandler)
-
+	http.HandleFunc("/cancel", handleCancel)
 	go matchPlayers()
 	go cleanupOldRooms()
 
@@ -204,6 +204,30 @@ func handleJoin(w http.ResponseWriter, r *http.Request) {
 	}
 	json.NewEncoder(w).Encode(response)
 }
+func handleCancel(w http.ResponseWriter, r *http.Request) {
+	playerID := r.URL.Query().Get("id")
+	if playerID == "" {
+		http.Error(w, "ID is required", http.StatusBadRequest)
+		return
+	}
+
+	poolMutex.Lock()
+	defer poolMutex.Unlock()
+
+	// Eliminar jugador de players map
+	delete(players, playerID)
+
+	// Eliminar de pool slice
+	for i, p := range pool {
+		if p.ID == playerID {
+			pool = append(pool[:i], pool[i+1:]...)
+			break
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "cancelled"})
+}
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
@@ -282,7 +306,8 @@ func cleanupOldRooms() {
 			_, p1Exists := players[roomPlayers[0]]
 			_, p2Exists := players[roomPlayers[1]]
 
-			if !p1Exists && !p2Exists {
+			// Eliminar sala si algún jugador no existe
+			if !p1Exists || !p2Exists {
 				delete(rooms, room)
 			}
 		}
@@ -290,4 +315,5 @@ func cleanupOldRooms() {
 		roomMutex.Unlock()
 		poolMutex.Unlock()
 	}
+
 }
