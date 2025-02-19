@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -268,28 +269,58 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// extractMode extrae la subcadena del id a partir de la palabra "modo" (incluyéndola).
+func extractMode(id string) string {
+	idx := strings.Index(id, "modo")
+	if idx == -1 {
+		return ""
+	}
+	return id[idx:]
+}
+
 func matchPlayers() {
 	for {
 		poolMutex.Lock()
-		if len(pool) >= 2 {
-			p1 := pool[0]
-			p2 := pool[1]
+		paired := false
+		// Iteramos sobre el pool buscando dos jugadores con el mismo modo
+		for i := 0; i < len(pool)-1; i++ {
+			p1 := pool[i]
+			mode1 := extractMode(p1.ID)
+			if mode1 == "" {
+				continue // Si no se encuentra "modo" en el id, lo saltamos
+			}
+			for j := i + 1; j < len(pool); j++ {
+				p2 := pool[j]
+				mode2 := extractMode(p2.ID)
+				if mode2 == mode1 {
+					// Se encontró un par con el mismo modo
+					roomID := uuid.New().String()
+					p1.RoomID = roomID
+					p2.RoomID = roomID
+					p1.Matched = true
+					p2.Matched = true
 
-			roomID := uuid.New().String()
+					// Removemos ambos jugadores del pool.
+					// Primero removemos el de índice mayor para no afectar el índice del otro.
+					pool = append(pool[:j], pool[j+1:]...)
+					pool = append(pool[:i], pool[i+1:]...)
 
-			p1.RoomID = roomID
-			p2.RoomID = roomID
-			p1.Matched = true
-			p2.Matched = true
+					// Guardamos la sala en el mapa de rooms
+					roomMutex.Lock()
+					rooms[roomID] = []string{p1.ID, p2.ID}
+					roomMutex.Unlock()
 
-			pool = pool[2:]
+					// Notificamos a los jugadores
+					p1.OpponentID <- p2.ID
+					p2.OpponentID <- p1.ID
 
-			roomMutex.Lock()
-			rooms[roomID] = []string{p1.ID, p2.ID}
-			roomMutex.Unlock()
-
-			p1.OpponentID <- p2.ID
-			p2.OpponentID <- p1.ID
+					paired = true
+					break
+				}
+			}
+			if paired {
+				break
+			}
 		}
 		poolMutex.Unlock()
 		time.Sleep(1 * time.Second)
